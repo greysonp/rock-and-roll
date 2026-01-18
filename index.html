@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rock and Roll</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #1a1a2e;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        #gameCanvas {
+            border: 2px solid #0f3460;
+            background: #16213e;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .info {
+            margin: 10px 0;
+            font-size: 18px;
+        }
+        .score {
+            font-size: 24px;
+            font-weight: bold;
+            color: #e94560;
+        }
+        #rotationControl {
+            width: 300px;
+            margin: 10px;
+        }
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 40px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        .game-over h1 {
+            color: #e94560;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #d63447;
+        }
+        .instructions {
+            margin-top: 20px;
+            max-width: 600px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+        }
+        .instructions h3 {
+            margin-top: 0;
+            color: #e94560;
+        }
+    </style>
+</head>
+<body>
+    <div class="info">
+        <span class="score">Score: <span id="score">0</span></span>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+    <div class="controls">
+        <div>Rotation Speed: <input type="range" id="rotationControl" min="-5" max="5" value="2" step="0.1"></div>
+        <div>WASD to move Rock | Arrow Keys ↑↓ or Scroll Wheel to control rotation speed</div>
+    </div>
+
+    <div class="game-over" id="gameOver">
+        <h1>Game Over!</h1>
+        <p class="score">Final Score: <span id="finalScore">0</span></p>
+        <button onclick="restartGame()">Play Again</button>
+    </div>
+
+    <div class="instructions">
+        <h3>How to Play</h3>
+        <p><strong>Goal:</strong> Hit enemies with the rope between Rock and Roll without letting Rock or Roll touch any enemies!</p>
+        <p><strong>Controls:</strong></p>
+        <ul style="text-align: left;">
+            <li>WASD - Move Rock (blue circle)</li>
+            <li>Arrow Keys ↑↓ or Scroll Wheel - Control Roll's rotation speed</li>
+            <li>Slider - Fine-tune rotation speed</li>
+        </ul>
+        <p>The rope will destroy enemies it touches. Each hit increases your score!</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Set canvas size
+        canvas.width = 800;
+        canvas.height = 600;
+
+        // Game state
+        let gameState = {
+            running: true,
+            score: 0
+        };
+
+        // Rock (player-controlled character)
+        const rock = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            radius: 20,
+            color: '#3498db',
+            vx: 0,
+            vy: 0,
+            speed: 3
+        };
+
+        // Roll (orbiting character)
+        const roll = {
+            angle: 0,
+            distance: 100, // distance from Rock
+            radius: 15,
+            color: '#e74c3c',
+            rotationSpeed: 2, // degrees per frame
+            x: 0,
+            y: 0
+        };
+
+        // Enemies
+        let enemies = [];
+        const enemySpawnRate = 120; // frames between spawns
+        let frameCount = 0;
+
+        // Input state
+        const keys = {};
+
+        // Initialize
+        function init() {
+            gameState.running = true;
+            gameState.score = 0;
+            rock.x = canvas.width / 2;
+            rock.y = canvas.height / 2;
+            rock.vx = 0;
+            rock.vy = 0;
+            roll.angle = 0;
+            enemies = [];
+            frameCount = 0;
+            document.getElementById('gameOver').style.display = 'none';
+            document.getElementById('score').textContent = '0';
+        }
+
+        // Keyboard input
+        document.addEventListener('keydown', (e) => {
+            keys[e.key.toLowerCase()] = true;
+
+            // Arrow keys for rotation speed
+            if (e.key === 'ArrowUp') {
+                roll.rotationSpeed = Math.min(roll.rotationSpeed + 0.3, 10);
+                document.getElementById('rotationControl').value = roll.rotationSpeed;
+            } else if (e.key === 'ArrowDown') {
+                roll.rotationSpeed = Math.max(roll.rotationSpeed - 0.3, -10);
+                document.getElementById('rotationControl').value = roll.rotationSpeed;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key.toLowerCase()] = false;
+        });
+
+        // Mouse wheel for rotation speed
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                roll.rotationSpeed = Math.min(roll.rotationSpeed + 0.3, 10);
+            } else {
+                roll.rotationSpeed = Math.max(roll.rotationSpeed - 0.3, -10);
+            }
+            document.getElementById('rotationControl').value = roll.rotationSpeed;
+        });
+
+        // Slider for rotation speed
+        document.getElementById('rotationControl').addEventListener('input', (e) => {
+            roll.rotationSpeed = parseFloat(e.target.value);
+        });
+
+        // Update Rock position based on WASD
+        function updateRock() {
+            rock.vx = 0;
+            rock.vy = 0;
+
+            if (keys['w']) rock.vy = -rock.speed;
+            if (keys['s']) rock.vy = rock.speed;
+            if (keys['a']) rock.vx = -rock.speed;
+            if (keys['d']) rock.vx = rock.speed;
+
+            // Normalize diagonal movement
+            if (rock.vx !== 0 && rock.vy !== 0) {
+                const factor = Math.sqrt(2) / 2;
+                rock.vx *= factor;
+                rock.vy *= factor;
+            }
+
+            rock.x += rock.vx;
+            rock.y += rock.vy;
+
+            // Keep Rock in bounds
+            rock.x = Math.max(rock.radius, Math.min(canvas.width - rock.radius, rock.x));
+            rock.y = Math.max(rock.radius, Math.min(canvas.height - rock.radius, rock.y));
+        }
+
+        // Update Roll position (orbits around Rock)
+        function updateRoll() {
+            roll.angle += roll.rotationSpeed * Math.PI / 180; // Convert to radians
+            roll.x = rock.x + Math.cos(roll.angle) * roll.distance;
+            roll.y = rock.y + Math.sin(roll.angle) * roll.distance;
+        }
+
+        // Spawn enemies
+        function spawnEnemy() {
+            const side = Math.floor(Math.random() * 4);
+            let x, y;
+
+            switch(side) {
+                case 0: // top
+                    x = Math.random() * canvas.width;
+                    y = -20;
+                    break;
+                case 1: // right
+                    x = canvas.width + 20;
+                    y = Math.random() * canvas.height;
+                    break;
+                case 2: // bottom
+                    x = Math.random() * canvas.width;
+                    y = canvas.height + 20;
+                    break;
+                case 3: // left
+                    x = -20;
+                    y = Math.random() * canvas.height;
+                    break;
+            }
+
+            // Move towards the center
+            const angle = Math.atan2(canvas.height / 2 - y, canvas.width / 2 - x);
+            const speed = 1 + Math.random() * 1.5;
+
+            enemies.push({
+                x: x,
+                y: y,
+                radius: 15,
+                color: '#9b59b6',
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed
+            });
+        }
+
+        // Update enemies
+        function updateEnemies() {
+            enemies.forEach(enemy => {
+                enemy.x += enemy.vx;
+                enemy.y += enemy.vy;
+            });
+
+            // Remove enemies that are far off screen
+            enemies = enemies.filter(enemy =>
+                enemy.x > -100 && enemy.x < canvas.width + 100 &&
+                enemy.y > -100 && enemy.y < canvas.height + 100
+            );
+        }
+
+        // Check collision between two circles
+        function circleCollision(c1, c2) {
+            const dx = c1.x - c2.x;
+            const dy = c1.y - c2.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            return distance < c1.radius + c2.radius;
+        }
+
+        // Check if a point is near a line segment
+        function pointLineDistance(px, py, x1, y1, x2, y2) {
+            const A = px - x1;
+            const B = py - y1;
+            const C = x2 - x1;
+            const D = y2 - y1;
+
+            const dot = A * C + B * D;
+            const lenSq = C * C + D * D;
+            let param = -1;
+
+            if (lenSq !== 0) {
+                param = dot / lenSq;
+            }
+
+            let xx, yy;
+
+            if (param < 0) {
+                xx = x1;
+                yy = y1;
+            } else if (param > 1) {
+                xx = x2;
+                yy = y2;
+            } else {
+                xx = x1 + param * C;
+                yy = y1 + param * D;
+            }
+
+            const dx = px - xx;
+            const dy = py - yy;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        // Check collisions
+        function checkCollisions() {
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const enemy = enemies[i];
+
+                // Check if Rock or Roll hit enemy (game over)
+                if (circleCollision(rock, enemy) || circleCollision(roll, enemy)) {
+                    gameOver();
+                    return;
+                }
+
+                // Check if rope hit enemy (destroy enemy, increase score)
+                const distance = pointLineDistance(enemy.x, enemy.y, rock.x, rock.y, roll.x, roll.y);
+                if (distance < enemy.radius + 2) { // 2 is rope thickness
+                    enemies.splice(i, 1);
+                    gameState.score++;
+                    document.getElementById('score').textContent = gameState.score;
+                }
+            }
+        }
+
+        // Draw everything
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#16213e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw rope
+            ctx.strokeStyle = '#f1c40f';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(rock.x, rock.y);
+            ctx.lineTo(roll.x, roll.y);
+            ctx.stroke();
+
+            // Draw Rock
+            ctx.fillStyle = rock.color;
+            ctx.beginPath();
+            ctx.arc(rock.x, rock.y, rock.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#2980b9';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw Roll
+            ctx.fillStyle = roll.color;
+            ctx.beginPath();
+            ctx.arc(roll.x, roll.y, roll.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#c0392b';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Draw enemies
+            enemies.forEach(enemy => {
+                ctx.fillStyle = enemy.color;
+                ctx.beginPath();
+                ctx.arc(enemy.x, enemy.y, enemy.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = '#8e44ad';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            });
+        }
+
+        // Game loop
+        function gameLoop() {
+            if (!gameState.running) return;
+
+            frameCount++;
+
+            // Spawn enemies
+            if (frameCount % enemySpawnRate === 0) {
+                spawnEnemy();
+            }
+
+            // Update
+            updateRock();
+            updateRoll();
+            updateEnemies();
+            checkCollisions();
+
+            // Draw
+            draw();
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Game over
+        function gameOver() {
+            gameState.running = false;
+            document.getElementById('finalScore').textContent = gameState.score;
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        // Restart game
+        function restartGame() {
+            init();
+            gameLoop();
+        }
+
+        // Start game
+        init();
+        gameLoop();
+    </script>
+</body>
+</html>
