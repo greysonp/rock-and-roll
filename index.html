@@ -111,7 +111,7 @@
         <div class="tilt-indicator" id="tiltIndicator" style="display: none;" onclick="recalibrateTilt()">
             Tilt controls active - Tap to recalibrate
         </div>
-        <div>Rotation Speed: <input type="range" id="rotationControl" min="-5" max="5" value="2" step="0.1"></div>
+        <div>Rope Length: <input type="range" id="ropeLengthControl" min="50" max="200" value="100" step="5"></div>
         <div>WASD to move Rock | Arrow Keys ↑↓ or Scroll Wheel to control rotation speed</div>
     </div>
 
@@ -129,7 +129,7 @@
             <li>WASD - Move Rock (blue circle)</li>
             <li>Tilt Controls (Mobile) - Tilt your device to move Rock</li>
             <li>Arrow Keys ↑↓ or Scroll Wheel - Control Roll's rotation speed</li>
-            <li>Slider - Fine-tune rotation speed</li>
+            <li>Slider - Adjust rope length</li>
         </ul>
         <p>The rope will destroy enemies it touches. Each hit increases your score!</p>
     </div>
@@ -162,12 +162,16 @@
         // Roll (orbiting character)
         const roll = {
             angle: 0,
-            distance: 100, // distance from Rock
+            distance: 100, // target distance from Rock
             radius: 15,
             color: '#e74c3c',
             rotationSpeed: 2, // degrees per frame
             x: 0,
-            y: 0
+            y: 0,
+            vx: 0,
+            vy: 0,
+            springStiffness: 0.15, // how quickly rope pulls back
+            damping: 0.85 // reduces oscillation
         };
 
         // Enemies
@@ -258,6 +262,11 @@
             rock.vx = 0;
             rock.vy = 0;
             roll.angle = 0;
+            roll.distance = 100;
+            roll.x = rock.x + roll.distance;
+            roll.y = rock.y;
+            roll.vx = 0;
+            roll.vy = 0;
             enemies = [];
             frameCount = 0;
             document.getElementById('gameOver').style.display = 'none';
@@ -271,10 +280,8 @@
             // Arrow keys for rotation speed
             if (e.key === 'ArrowUp') {
                 roll.rotationSpeed = Math.min(roll.rotationSpeed + 0.3, 10);
-                document.getElementById('rotationControl').value = roll.rotationSpeed;
             } else if (e.key === 'ArrowDown') {
                 roll.rotationSpeed = Math.max(roll.rotationSpeed - 0.3, -10);
-                document.getElementById('rotationControl').value = roll.rotationSpeed;
             }
         });
 
@@ -290,12 +297,11 @@
             } else {
                 roll.rotationSpeed = Math.max(roll.rotationSpeed - 0.3, -10);
             }
-            document.getElementById('rotationControl').value = roll.rotationSpeed;
         });
 
-        // Slider for rotation speed
-        document.getElementById('rotationControl').addEventListener('input', (e) => {
-            roll.rotationSpeed = parseFloat(e.target.value);
+        // Slider for rope length
+        document.getElementById('ropeLengthControl').addEventListener('input', (e) => {
+            roll.distance = parseFloat(e.target.value);
         });
 
         // Update Rock position based on WASD and tilt
@@ -333,11 +339,30 @@
             rock.y = Math.max(rock.radius, Math.min(canvas.height - rock.radius, rock.y));
         }
 
-        // Update Roll position (orbits around Rock)
+        // Update Roll position (orbits around Rock with spring physics)
         function updateRoll() {
+            // Update rotation angle
             roll.angle += roll.rotationSpeed * Math.PI / 180; // Convert to radians
-            roll.x = rock.x + Math.cos(roll.angle) * roll.distance;
-            roll.y = rock.y + Math.sin(roll.angle) * roll.distance;
+
+            // Calculate target position (where Roll should be)
+            const targetX = rock.x + Math.cos(roll.angle) * roll.distance;
+            const targetY = rock.y + Math.sin(roll.angle) * roll.distance;
+
+            // Apply spring force towards target position
+            const dx = targetX - roll.x;
+            const dy = targetY - roll.y;
+
+            // Spring acceleration
+            roll.vx += dx * roll.springStiffness;
+            roll.vy += dy * roll.springStiffness;
+
+            // Apply damping to reduce oscillation
+            roll.vx *= roll.damping;
+            roll.vy *= roll.damping;
+
+            // Update position
+            roll.x += roll.vx;
+            roll.y += roll.vy;
         }
 
         // Spawn enemies
