@@ -78,6 +78,20 @@
             margin-top: 0;
             color: #e94560;
         }
+        #tiltButton {
+            display: none;
+            margin: 10px;
+        }
+        @media (max-width: 768px) {
+            #tiltButton {
+                display: inline-block;
+            }
+        }
+        .tilt-indicator {
+            margin: 10px;
+            font-size: 14px;
+            color: #2ecc71;
+        }
     </style>
 </head>
 <body>
@@ -86,6 +100,8 @@
     </div>
     <canvas id="gameCanvas"></canvas>
     <div class="controls">
+        <button id="tiltButton" onclick="enableTiltControls()">Enable Tilt Controls</button>
+        <div class="tilt-indicator" id="tiltIndicator" style="display: none;">Tilt controls active</div>
         <div>Rotation Speed: <input type="range" id="rotationControl" min="-5" max="5" value="2" step="0.1"></div>
         <div>WASD to move Rock | Arrow Keys ↑↓ or Scroll Wheel to control rotation speed</div>
     </div>
@@ -102,6 +118,7 @@
         <p><strong>Controls:</strong></p>
         <ul style="text-align: left;">
             <li>WASD - Move Rock (blue circle)</li>
+            <li>Tilt Controls (Mobile) - Tilt your device to move Rock</li>
             <li>Arrow Keys ↑↓ or Scroll Wheel - Control Roll's rotation speed</li>
             <li>Slider - Fine-tune rotation speed</li>
         </ul>
@@ -152,6 +169,63 @@
         // Input state
         const keys = {};
 
+        // Tilt controls
+        let tiltEnabled = false;
+        let tiltX = 0;
+        let tiltY = 0;
+        const tiltSensitivity = 0.5;
+
+        // Enable tilt controls
+        function enableTiltControls() {
+            // Request permission for iOS 13+ devices
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(response => {
+                        if (response === 'granted') {
+                            activateTiltControls();
+                        } else {
+                            alert('Permission denied for device orientation');
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Non-iOS devices or older iOS versions
+                activateTiltControls();
+            }
+        }
+
+        function activateTiltControls() {
+            tiltEnabled = true;
+            document.getElementById('tiltButton').style.display = 'none';
+            document.getElementById('tiltIndicator').style.display = 'block';
+
+            window.addEventListener('deviceorientation', handleOrientation);
+        }
+
+        function handleOrientation(event) {
+            if (!tiltEnabled) return;
+
+            // beta: front-to-back tilt (-180 to 180)
+            // gamma: left-to-right tilt (-90 to 90)
+            let beta = event.beta || 0;
+            let gamma = event.gamma || 0;
+
+            // Normalize beta to -90 to 90 range (assuming device is held upright)
+            if (beta > 90) beta = 90;
+            if (beta < -90) beta = -90;
+
+            // Map tilt angles to velocity (-1 to 1)
+            // gamma: -90 (left) to 90 (right)
+            // beta: -90 (forward) to 90 (backward)
+            tiltX = (gamma / 90) * tiltSensitivity;
+            tiltY = (beta / 90) * tiltSensitivity;
+
+            // Adjust for typical holding angle (usually tilted slightly forward)
+            // Subtract about 30 degrees from beta for more natural control
+            const betaOffset = 30;
+            tiltY = ((beta - betaOffset) / 60) * tiltSensitivity;
+        }
+
         // Initialize
         function init() {
             gameState.running = true;
@@ -201,21 +275,31 @@
             roll.rotationSpeed = parseFloat(e.target.value);
         });
 
-        // Update Rock position based on WASD
+        // Update Rock position based on WASD and tilt
         function updateRock() {
             rock.vx = 0;
             rock.vy = 0;
 
+            // WASD controls
             if (keys['w']) rock.vy = -rock.speed;
             if (keys['s']) rock.vy = rock.speed;
             if (keys['a']) rock.vx = -rock.speed;
             if (keys['d']) rock.vx = rock.speed;
 
+            // Add tilt controls if enabled
+            if (tiltEnabled) {
+                rock.vx += tiltX * rock.speed * 2;
+                rock.vy += tiltY * rock.speed * 2;
+            }
+
             // Normalize diagonal movement
             if (rock.vx !== 0 && rock.vy !== 0) {
-                const factor = Math.sqrt(2) / 2;
-                rock.vx *= factor;
-                rock.vy *= factor;
+                const magnitude = Math.sqrt(rock.vx * rock.vx + rock.vy * rock.vy);
+                const maxSpeed = rock.speed;
+                if (magnitude > maxSpeed) {
+                    rock.vx = (rock.vx / magnitude) * maxSpeed;
+                    rock.vy = (rock.vy / magnitude) * maxSpeed;
+                }
             }
 
             rock.x += rock.vx;
